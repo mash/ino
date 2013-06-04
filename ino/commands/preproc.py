@@ -35,11 +35,47 @@ class Preprocess(Command):
 
         sketch = open(args.sketch, 'rt').read()
 
-        header = 'Arduino.h' if self.e.arduino_lib_version.major else 'WProgram.h'
-        out.write('#include <%s>\n' % header)
+        self.write_program( sketch, out )
+
+    """
+    Ported writeProgram of
+    https://github.com/arduino/Arduino/blob/master/app/src/processing/app/preproc/PdePreprocessor.java#L198
+    to Python
+    """
+    def write_program(self, sketch, out):
+        prototype_insertion_point = self.first_statement(sketch);
+
+        out.write(sketch[0:prototype_insertion_point])
+        out.write("#include \"Arduino.h\"\n")
         out.write('\n'.join(self.prototypes(sketch)))
-        out.write('\n#line 1 "%s"\n' % args.sketch)
-        out.write(sketch)
+        out.write('\n')
+
+        lines = len(sketch[0:prototype_insertion_point].splitlines())
+        out.write("#line %d\n" % lines);
+        out.write(sketch[prototype_insertion_point:]);
+
+    """
+    Ported firstStatement of
+    https://github.com/arduino/Arduino/blob/master/app/src/processing/app/preproc/PdePreprocessor.java#L234
+    to Python
+    """
+    def first_statement(self, sketch):
+        # whitespace
+        p = "\\s+";
+
+        # multi-line and single-line comment
+        p += "|(/\\*[^*]*(?:\\*(?!/)[^*]*)*\\*/)|(//.*?$)";
+
+        # pre-processor directive
+        p += "|(#(?:\\\\\\n|.)*)";
+        regex = re.compile(p, re.MULTILINE);
+
+        i = 0
+        for match in re.finditer(regex,sketch):
+            if match.start() != i: break
+            i = match.end()
+
+        return i;
 
     def prototypes(self, src):
         src = self.collapse_braces(self.strip(src))
@@ -62,7 +98,7 @@ class Preprocess(Command):
             elif c == '}':
                 nesting -= 1
                 result.append(c)
-        
+
         return ''.join(result)
 
     def strip(self, src):
@@ -72,13 +108,13 @@ class Preprocess(Command):
         """
         # single-quoted character
         p = "('.')"
-        
+
         # double-quoted string
         p += "|(\"(?:[^\"\\\\]|\\\\.)*\")"
-        
+
         # single and multi-line comment
         p += "|(//.*?$)|(/\\*[^*]*(?:\\*(?!/)[^*]*)*\\*/)"
-        
+
         # pre-processor directive
         p += "|" + "(^\\s*#.*?$)"
 
